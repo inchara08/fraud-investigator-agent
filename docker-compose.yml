@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  aerospike:
+    image: aerospike/aerospike-server:latest
+    container_name: aerospike
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+      - "3002:3002"
+    environment:
+      - NAMESPACE=test
+    healthcheck:
+      test: ["CMD-SHELL", "asinfo -v status | grep -q ok || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # -----------------------------------------------------------------
+  # DEV MODE: Apache TinkerPop Gremlin Server 3.7.2 (TinkerGraph)
+  # Public image, no license required. Gremlin queries are identical
+  # to Aerospike Graph — swap back to aerospike-graph-service when a
+  # license is available.
+  # -----------------------------------------------------------------
+  aerospike-graph:
+    image: tinkerpop/gremlin-server:3.7.2
+    container_name: aerospike-graph
+    ports:
+      - "8182:8182"
+    volumes:
+      - ./config/tinkergraph-empty.properties:/opt/gremlin-server/conf/tinkergraph-empty.properties:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8182/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s

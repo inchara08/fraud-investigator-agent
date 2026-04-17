@@ -83,35 +83,35 @@ flowchart TB
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      SIGNAL EXTRACTION                           │
-│                                                                  │
-│  ┌───────────────────┐  ┌──────────────────┐  ┌─────────────┐  │
-│  │  Graph Traversal  │  │  Memory Recall   │  │ Case Search │  │
-│  │  1-hop context    │  │  AerospikeStore  │  │ 768-dim     │  │
-│  │  + 3-hop paths    │  │  flagged accts   │  │ cosine sim  │  │
-│  │  (Gremlin/        │  │  (90-day TTL)    │  │ top-3 cases │  │
-│  │   TinkerPop)      │  │                  │  │             │  │
-│  └───────────────────┘  └──────────────────┘  └─────────────┘  │
+│                      SIGNAL EXTRACTION                          │
+│                                                                 │
+│  ┌───────────────────┐  ┌──────────────────┐  ┌─────────────┐   │
+│  │  Graph Traversal  │  │  Memory Recall   │  │ Case Search │   │
+│  │  1-hop context    │  │  AerospikeStore  │  │ 768-dim     │   │
+│  │  + 3-hop paths    │  │  flagged accts   │  │ cosine sim  │   │
+│  │  (Gremlin/        │  │  (90-day TTL)    │  │ top-3 cases │   │
+│  │   TinkerPop)      │  │                  │  │             │   │
+│  └───────────────────┘  └──────────────────┘  └─────────────┘   │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      AGENT REASONING                             │
+│                      AGENT REASONING                            │
 │   Gemini 2.5-Flash (temp=0) · graph + memory + similar cases    │
 │   Output: structured reasoning trace (auditable, streamable)    │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    EVIDENCE AGGREGATION                          │
+│                    EVIDENCE AGGREGATION                         │
 │   LangGraph state: graph_context · memory_context ·             │
 │   similar_cases · messages — unified input to verdict node      │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      DECISION OUTPUT                             │
-│   verdict: FRAUD · SUSPICIOUS · CLEAN  |  confidence: 0.0–1.0  │
+│                      DECISION OUTPUT                            │
+│   verdict: FRAUD · SUSPICIOUS · CLEAN  |  confidence: 0.0–1.0   │
 │   risk_factors: [...]  |  explanation: prose for compliance     │
 │   ── persists to AerospikeStore if FRAUD or SUSPICIOUS          │
 │   ── streams to Streamlit UI (verdict card + reasoning trace)   │
@@ -418,9 +418,9 @@ operation. No signal in isolation is conclusive; together, they are.
 │  EXPLANATION                                                    │
 │  Marcus Chen's transaction presents six converging fraud        │
 │  indicators. Device sharing with Nina (prior structuring flag)  │
-│  and a shared offshore merchant with Omar (confirmed           │
+│  and a shared offshore merchant with Omar (confirmed            │
 │  laundering) place Marcus within a known mule network.          │
-│  The $9,200 amount, 18-day account age, and strong historical  │
+│  The $9,200 amount, 18-day account age, and strong historical   │
 │  pattern match reinforce this assessment. Recommend immediate   │
 │  account freeze and SAR filing.                                 │
 └─────────────────────────────────────────────────────────────────┘

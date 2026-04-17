@@ -106,10 +106,12 @@ class FraudVerdict(BaseModel):
     explanation: str = Field(
         description="Natural language explanation for a compliance officer"
     )
-    graph_path_summary: str = Field(
+    graph_path_summary: Optional[str] = Field(
+        default=None,
         description="Key graph path or combination of signals that triggered this verdict"
     )
-    risk_factors: List[str] = Field(
+    risk_factors: Optional[List[str]] = Field(
+        default=None,
         description="Specific risk signals identified (empty list if CLEAN)"
     )
 
@@ -120,6 +122,15 @@ class FraudVerdict(BaseModel):
 
 def ingest_transaction(state: FraudInvestigationState) -> dict:
     tx_id = state["transaction_id"]
+    # CSV mode: graph_context pre-built from uploaded data — skip Gremlin lookup
+    if state.get("graph_context") is not None:
+        return {
+            "messages": [
+                HumanMessage(content=f"Investigate transaction: {tx_id}"),
+                AIMessage(content=f"Transaction `{tx_id}` loaded from uploaded dataset."),
+            ],
+            "investigation_complete": False,
+        }
     if not transaction_exists(tx_id):
         return {
             "messages": [
@@ -144,6 +155,21 @@ def ingest_transaction(state: FraudInvestigationState) -> dict:
 
 def query_graph(state: FraudInvestigationState) -> dict:
     tx_id = state["transaction_id"]
+
+    # CSV mode: graph_context already built from uploaded data — skip Gremlin
+    if state.get("graph_context") is not None:
+        ctx = state["graph_context"]
+        n_neighbors = len(ctx.get("direct_context", {}).get("neighbors", []))
+        n_paths = len(ctx.get("flagged_paths", []))
+        return {
+            "messages": [AIMessage(
+                content=(
+                    f"Graph built from uploaded data — "
+                    f"{n_neighbors} connected entity/entities, "
+                    f"{n_paths} flagged path(s) discovered."
+                )
+            )]
+        }
 
     direct_context = fetch_transaction_context(tx_id)
     flagged_paths = find_flagged_neighbors(tx_id, max_hops=3)
@@ -294,9 +320,46 @@ explanation, graph_path_summary, and risk_factors list."""
         {"role": "user", "content": verdict_prompt},
     ]
 
-    result: FraudVerdict = _invoke_structured_with_retry(
-        messages, FraudVerdict, temperature=0, max_output_tokens=1024
-    )
+    try:
+        result: FraudVerdict = _invoke_structured_with_retry(
+            messages, FraudVerdict, temperature=0, max_output_tokens=4096
+        )
+    except Exception as parse_err:
+        # Structured output failed (truncated JSON / schema mismatch).
+        # Fall back to a plain LLM call and extract the verdict manually.
+        plain_prompt = verdict_prompt + (
+            "\n\nRespond with ONLY a JSON object using these exact keys: "
+            "verdict, confidence, explanation, graph_path_summary, risk_factors"
+        )
+        plain_messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": plain_prompt},
+        ]
+        raw = _invoke_with_retry(plain_messages, temperature=0, max_output_tokens=4096)
+        raw_text = raw.content.strip()
+        # Strip markdown code fences if present
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("```")[1]
+            if raw_text.startswith("json"):
+                raw_text = raw_text[4:]
+        try:
+            data = json.loads(raw_text)
+            result = FraudVerdict(
+                verdict=data.get("verdict", "SUSPICIOUS"),
+                confidence=float(data.get("confidence", 0.5)),
+                explanation=data.get("explanation", str(parse_err)),
+                graph_path_summary=data.get("graph_path_summary") or "",
+                risk_factors=data.get("risk_factors") or [],
+            )
+        except Exception:
+            # Last resort: return SUSPICIOUS with the raw text as explanation
+            result = FraudVerdict(
+                verdict="SUSPICIOUS",
+                confidence=0.5,
+                explanation=raw_text[:500] if raw_text else str(parse_err),
+                graph_path_summary="",
+                risk_factors=[],
+            )
 
     # Persist to AerospikeStore if flagged
     if result.verdict in ("FRAUD", "SUSPICIOUS"):
@@ -306,7 +369,7 @@ explanation, graph_path_summary, and risk_factors list."""
                 store=store,
                 account_id=acc_id,
                 verdict=result.verdict,
-                reason=result.graph_path_summary,
+                reason=result.graph_path_summary or "",
                 transaction_id=state["transaction_id"],
             )
 
